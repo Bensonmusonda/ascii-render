@@ -1,4 +1,5 @@
-// src/main.rs
+const WIDTH: usize = 80;
+const HEIGHT: usize = 40;
 
 #[derive(Clone, Copy, Debug)]
 struct Vec3 {
@@ -11,6 +12,34 @@ struct Vec3 {
 struct Point2D {
     x: i32,
     y: i32,
+}
+
+/// Create a blank grid filled with spaces.
+fn new_grid() -> Vec<Vec<char>> {
+    vec![vec![' '; WIDTH]; HEIGHT]
+}
+
+/// Draw a line between two screen points using simple linear interpolation.
+fn draw_line(grid: &mut Vec<Vec<char>>, a: Point2D, b: Point2D, ch: char) {
+    let steps = ((a.x - b.x).abs()).max((a.y - b.y).abs()).max(1);
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let x = a.x as f32 + (b.x - a.x) as f32 * t;
+        let y = a.y as f32 + (b.y - a.y) as f32 * t;
+        let (xi, yi) = (x.round() as i32, y.round() as i32);
+        if xi >= 0 && xi < WIDTH as i32 && yi >= 0 && yi < HEIGHT as i32 {
+            grid[yi as usize][xi as usize] = ch;
+        }
+    }
+}
+
+/// Print the grid to stdout, clearing the screen first.
+fn render_grid(grid: &Vec<Vec<char>>) {
+    print!("\x1B[2J\x1B[1;1H"); // clear screen, move cursor to top-left
+    for row in grid {
+        let line: String = row.iter().collect();
+        println!("{}", line);
+    }
 }
 
 /// The 8 vertices of a unit cube, centered at origin.
@@ -76,21 +105,31 @@ fn main() {
     let vertices = cube_vertices();
     let edges = cube_edges();
 
-    let angle_x: f32 = 0.4;
-    let angle_y: f32 = 0.6;
+    let mut angle_x: f32 = 0.0;
+    let mut angle_y: f32 = 0.0;
 
-    const WIDTH: i32 = 80;
-    const HEIGHT: i32 = 40;
+    loop {
+        let mut grid = new_grid();
 
-    let mut screen_points = Vec::with_capacity(vertices.len());
+        // Rotate + project all vertices for this frame
+        let screen_points: Vec<Point2D> = vertices
+            .iter()
+            .map(|v| {
+                let rotated = rotate_y(rotate_x(*v, angle_x), angle_y);
+                project(rotated, WIDTH as i32, HEIGHT as i32)
+            })
+            .collect();
 
-    for (i, v) in vertices.iter().enumerate() {
-        let rotated = rotate_y(rotate_x(*v, angle_x), angle_y);
-        let projected = project(rotated, WIDTH, HEIGHT);
-        println!("v{}: {:?} -> rotated {:?} -> screen {:?}", i, v, rotated, projected);
-        screen_points.push(projected);
+        // Draw each edge
+        for &(i, j) in &edges {
+            draw_line(&mut grid, screen_points[i], screen_points[j], '#');
+        }
+
+        render_grid(&grid);
+
+        angle_x += 0.05;
+        angle_y += 0.03;
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
-
-    println!("\nEdges: {:?}", edges);
-    println!("\nScreen points: {:?}", screen_points);
 }
