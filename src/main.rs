@@ -6,6 +6,7 @@ const HEIGHT: usize = 40;
 // Character ramp from "far" to "near"
 const SHADE_RAMP: [char; 5] = ['.', '-', '+', '#', '@'];
 
+
 #[derive(Clone, Copy, Debug)]
 struct Vec3 {
     x: f32,
@@ -24,10 +25,9 @@ fn new_grid() -> Vec<Vec<char>> {
     vec![vec![' '; WIDTH]; HEIGHT]
 }
 
-fn shade_char(z: f32) -> char {
-    // Closer to camera (more negative z, since camera looks down +z) = brighter.
-    // Clamp and normalize z into [0.0, 1.0]
-    let normalized = ((z + 2.0) / 4.0).clamp(0.0, 1.0);
+fn shade_char(z: f32, z_min: f32, z_max: f32) -> char {
+    let range = (z_max - z_min).max(1e-6);
+    let normalized = ((z - z_min) / range).clamp(0.0, 1.0);
     let idx = (normalized * (SHADE_RAMP.len() - 1) as f32).round() as usize;
     SHADE_RAMP[idx]
 }
@@ -39,6 +39,8 @@ fn draw_line_shaded(
     b: Point2D,
     z_a: f32,
     z_b: f32,
+    z_min: f32,
+    z_max: f32,
 ) {
     let steps = ((a.x - b.x).abs()).max((a.y - b.y).abs()).max(1);
     for i in 0..=steps {
@@ -48,11 +50,10 @@ fn draw_line_shaded(
         let z = z_a + (z_b - z_a) * t;
         let (xi, yi) = (x.round() as i32, y.round() as i32);
         if xi >= 0 && xi < WIDTH as i32 && yi >= 0 && yi < HEIGHT as i32 {
-            grid[yi as usize][xi as usize] = shade_char(z);
+            grid[yi as usize][xi as usize] = shade_char(z, z_min, z_max);
         }
     }
 }
-
 /// Print the grid to stdout, clearing the screen first.
 fn render_grid(grid: &Vec<Vec<char>>) {
     print!("\x1B[2J\x1B[1;1H"); // clear screen, move cursor to top-left
@@ -222,11 +223,15 @@ fn main() {
     loop {
         let mut grid = new_grid();
 
-        // Rotate all vertices, keep both the 2D projection and the z for shading
         let rotated: Vec<Vec3> = vertices
             .iter()
             .map(|v| rotate_y(rotate_x(*v, angle_x), angle_y))
             .collect();
+
+        // NEW: compute this frame's depth range
+        let z_values: Vec<f32> = rotated.iter().map(|v| v.z).collect();
+        let z_min = z_values.iter().cloned().fold(f32::INFINITY, f32::min);
+        let z_max = z_values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
 
         let screen_points: Vec<Point2D> = rotated
             .iter()
@@ -240,6 +245,8 @@ fn main() {
                 screen_points[j],
                 rotated[i].z,
                 rotated[j].z,
+                z_min,
+                z_max,
             );
         }
 
