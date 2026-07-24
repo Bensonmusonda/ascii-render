@@ -167,14 +167,54 @@ fn load_obj(path: &str) -> (Vec<Vec3>, Vec<(usize, usize)>) {
     (vertices, edges)
 }
 
+/// Center vertices around their bounding-box center and scale them to fit
+/// within a standard [-1, 1] range, similar to our hardcoded cube.
+fn normalize_vertices(vertices: &mut Vec<Vec3>) {
+    if vertices.is_empty() {
+        return;
+    }
+
+    // Find bounding box
+    let mut min = vertices[0];
+    let mut max = vertices[0];
+
+    for v in vertices.iter() {
+        min.x = min.x.min(v.x);
+        min.y = min.y.min(v.y);
+        min.z = min.z.min(v.z);
+        max.x = max.x.max(v.x);
+        max.y = max.y.max(v.y);
+        max.z = max.z.max(v.z);
+    }
+
+    // Center of the bounding box
+    let center = Vec3 {
+        x: (min.x + max.x) / 2.0,
+        y: (min.y + max.y) / 2.0,
+        z: (min.z + max.z) / 2.0,
+    };
+
+    // Largest dimension across all axes, used as the scale reference
+    let extent = ((max.x - min.x).max(max.y - min.y).max(max.z - min.z)).max(1e-6);
+    let scale = 2.0 / extent; // fit into roughly [-1, 1]
+
+    for v in vertices.iter_mut() {
+        v.x = (v.x - center.x) * scale;
+        v.y = (v.y - center.y) * scale;
+        v.z = (v.z - center.z) * scale;
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    let (vertices, edges) = if args.len() > 1 {
+    let (mut vertices, edges) = if args.len() > 1 {
         load_obj(&args[1])
     } else {
         (cube_vertices(), cube_edges())
     };
+
+    normalize_vertices(&mut vertices);
 
     let mut angle_x: f32 = 0.0;
     let mut angle_y: f32 = 0.0;
