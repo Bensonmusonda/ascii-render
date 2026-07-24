@@ -1,6 +1,9 @@
 const WIDTH: usize = 80;
 const HEIGHT: usize = 40;
 
+// Character ramp from "far" to "near"
+const SHADE_RAMP: [char; 5] = ['.', '-', '+', '#', '@'];
+
 #[derive(Clone, Copy, Debug)]
 struct Vec3 {
     x: f32,
@@ -19,16 +22,31 @@ fn new_grid() -> Vec<Vec<char>> {
     vec![vec![' '; WIDTH]; HEIGHT]
 }
 
-/// Draw a line between two screen points using simple linear interpolation.
-fn draw_line(grid: &mut Vec<Vec<char>>, a: Point2D, b: Point2D, ch: char) {
+fn shade_char(z: f32) -> char {
+    // Closer to camera (more negative z, since camera looks down +z) = brighter.
+    // Clamp and normalize z into [0.0, 1.0]
+    let normalized = ((z + 2.0) / 4.0).clamp(0.0, 1.0);
+    let idx = (normalized * (SHADE_RAMP.len() - 1) as f32).round() as usize;
+    SHADE_RAMP[idx]
+}
+
+/// Draw a line between two 3D-projected points, shading by interpolated depth.
+fn draw_line_shaded(
+    grid: &mut Vec<Vec<char>>,
+    a: Point2D,
+    b: Point2D,
+    z_a: f32,
+    z_b: f32,
+) {
     let steps = ((a.x - b.x).abs()).max((a.y - b.y).abs()).max(1);
     for i in 0..=steps {
         let t = i as f32 / steps as f32;
         let x = a.x as f32 + (b.x - a.x) as f32 * t;
         let y = a.y as f32 + (b.y - a.y) as f32 * t;
+        let z = z_a + (z_b - z_a) * t;
         let (xi, yi) = (x.round() as i32, y.round() as i32);
         if xi >= 0 && xi < WIDTH as i32 && yi >= 0 && yi < HEIGHT as i32 {
-            grid[yi as usize][xi as usize] = ch;
+            grid[yi as usize][xi as usize] = shade_char(z);
         }
     }
 }
@@ -111,18 +129,25 @@ fn main() {
     loop {
         let mut grid = new_grid();
 
-        // Rotate + project all vertices for this frame
-        let screen_points: Vec<Point2D> = vertices
+        // Rotate all vertices, keep both the 2D projection and the z for shading
+        let rotated: Vec<Vec3> = vertices
             .iter()
-            .map(|v| {
-                let rotated = rotate_y(rotate_x(*v, angle_x), angle_y);
-                project(rotated, WIDTH as i32, HEIGHT as i32)
-            })
+            .map(|v| rotate_y(rotate_x(*v, angle_x), angle_y))
             .collect();
 
-        // Draw each edge
+        let screen_points: Vec<Point2D> = rotated
+            .iter()
+            .map(|v| project(*v, WIDTH as i32, HEIGHT as i32))
+            .collect();
+
         for &(i, j) in &edges {
-            draw_line(&mut grid, screen_points[i], screen_points[j], '#');
+            draw_line_shaded(
+                &mut grid,
+                screen_points[i],
+                screen_points[j],
+                rotated[i].z,
+                rotated[j].z,
+            );
         }
 
         render_grid(&grid);
