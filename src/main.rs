@@ -1,3 +1,5 @@
+use std::fs;
+
 const WIDTH: usize = 80;
 const HEIGHT: usize = 40;
 
@@ -119,9 +121,60 @@ fn project(p: Vec3, screen_width: i32, screen_height: i32) -> Point2D {
     Point2D { x: screen_x, y: screen_y }
 }
 
+
+/// Load vertices and edges from a simple OBJ file.
+/// Supports `v x y z` and `f i j k ...` (triangles or polygons, 1-based indices).
+/// Ignores normals, UVs, materials, etc.
+fn load_obj(path: &str) -> (Vec<Vec3>, Vec<(usize, usize)>) {
+    let contents = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read OBJ file '{}': {}", path, e));
+
+    let mut vertices = Vec::new();
+    let mut edge_set = std::collections::HashSet::new();
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with("v ") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            // parts[0] == "v", parts[1..4] == x y z
+            let x: f32 = parts[1].parse().unwrap();
+            let y: f32 = parts[2].parse().unwrap();
+            let z: f32 = parts[3].parse().unwrap();
+            vertices.push(Vec3 { x, y, z });
+        } else if line.starts_with("f ") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            // Each face part may look like "3", "3/1", or "3/1/2" (v/vt/vn) — take only the vertex index.
+            let indices: Vec<usize> = parts[1..]
+                .iter()
+                .map(|p| {
+                    let vertex_idx = p.split('/').next().unwrap();
+                    vertex_idx.parse::<usize>().unwrap() - 1 // OBJ is 1-indexed
+                })
+                .collect();
+
+            // Turn the face (triangle or polygon) into edges, deduped.
+            let n = indices.len();
+            for i in 0..n {
+                let a = indices[i];
+                let b = indices[(i + 1) % n];
+                let edge = if a < b { (a, b) } else { (b, a) };
+                edge_set.insert(edge);
+            }
+        }
+    }
+
+    let edges: Vec<(usize, usize)> = edge_set.into_iter().collect();
+    (vertices, edges)
+}
+
 fn main() {
-    let vertices = cube_vertices();
-    let edges = cube_edges();
+    let args: Vec<String> = std::env::args().collect();
+
+    let (vertices, edges) = if args.len() > 1 {
+        load_obj(&args[1])
+    } else {
+        (cube_vertices(), cube_edges())
+    };
 
     let mut angle_x: f32 = 0.0;
     let mut angle_y: f32 = 0.0;
