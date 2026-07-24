@@ -7,6 +7,12 @@ struct Vec3 {
     z: f32,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Point2D {
+    x: i32,
+    y: i32,
+}
+
 /// The 8 vertices of a unit cube, centered at origin.
 fn cube_vertices() -> Vec<Vec3> {
     vec![
@@ -53,18 +59,38 @@ fn rotate_x(p: Vec3, angle: f32) -> Vec3 {
     }
 }
 
+fn project(p: Vec3, screen_width: i32, screen_height: i32) -> Point2D {
+    // Scale factor controls how "big" the cube appears.
+    // Terminal chars are taller than wide, so we scale x and y differently
+    // to avoid a squashed-looking cube.
+    let scale_x = screen_width as f32 / 4.0;
+    let scale_y = screen_height as f32 / 4.0;
+
+    let screen_x = (p.x * scale_x) as i32 + screen_width / 2;
+    let screen_y = (-p.y * scale_y) as i32 + screen_height / 2; // flip y: screen y grows downward
+
+    Point2D { x: screen_x, y: screen_y }
+}
+
 fn main() {
     let vertices = cube_vertices();
     let edges = cube_edges();
 
-    // Sanity check for now — Step 3/4 will replace this with real rendering.
     let angle_x: f32 = 0.4;
     let angle_y: f32 = 0.6;
 
+    const WIDTH: i32 = 80;
+    const HEIGHT: i32 = 40;
+
+    let mut screen_points = Vec::with_capacity(vertices.len());
+
     for (i, v) in vertices.iter().enumerate() {
         let rotated = rotate_y(rotate_x(*v, angle_x), angle_y);
-        println!("v{}: {:?} -> {:?}", i, v, rotated);
+        let projected = project(rotated, WIDTH, HEIGHT);
+        println!("v{}: {:?} -> rotated {:?} -> screen {:?}", i, v, rotated, projected);
+        screen_points.push(projected);
     }
 
     println!("\nEdges: {:?}", edges);
+    println!("\nScreen points: {:?}", screen_points);
 }
